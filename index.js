@@ -4,9 +4,25 @@ const dotenv = require("dotenv");
 
 dotenv.config();
 
+// https://vscode.blockscan.com/137/0xaDd9dA09AB2f2cC4491b0285980417208120DaFD
+const POLYGON_CONTRACT_ADDRESS = "0xeE3Afe347D5C74317041E2618C49534dAf887c24";
+const abi = [
+    "function getRequest(address requester, bytes32 identifier, uint256 timestamp, bytes memory ancillaryData) public view virtual returns (Request memory)",
+    "function setEventBased(bytes32 identifier, uint256 timestamp, bytes memory ancillaryData) external virtual"
+];
+
 const client = new OpenAI({
     apiKey: process.env["OPENAI_API_KEY"], // This is the default and can be omitted
 });
+
+const setEventBased = async (identifier, timestamp, ancillaryData) => {
+    // Examples
+    // UMIP 107
+    // Identifier: YES_OR_NO_QUERY
+    const contract = new ethers.Contract(POLYGON_CONTRACT_ADDRESS, abi, provider);
+    const transaction = await contract.setEventBased(identifier, timestamp, ancillaryData);
+    console.log(transaction);
+}
 
 const readChannel = async (channel) => {
     let data = "";
@@ -14,7 +30,7 @@ const readChannel = async (channel) => {
     let config = {
         method: "get",
         maxBodyLength: Infinity,
-        url: `https://discord.com/api/v9/channels/${channel}/messages?limit=50`,
+        url: `https://discord.com/api/v9/channels/${channel}/messages?limit=100`,
         headers: {
             Authorization: process.env["DISCORD_TOKEN"],
             Cookie: process.env["DISCORD_COOKIE"],
@@ -24,15 +40,67 @@ const readChannel = async (channel) => {
     console.log("Reading from channel", channel);
 
     const response = await axios(config);
+    const questions = [];
 
     for (let i = 0; i < response.data.length; i++) {
         console.log(response.data[i].content);
+
+        const data = {
+            id: response.data[i].id,
+            content: response.data[i].content,
+        }
+
+        if (!response.data[i].content.startsWith("__**Stickied Message:**__")) {
+            questions.push(data);
+
+            // get message id as "id"
+        }
     }
 
     // find messages that begin with "Fact Check"
-    const questions = response.data.filter((message) => message.content.startsWith("Fact check:"));
+    // const questions = response.data.filter((message) => message.content.startsWith("Fact check:"));
     return questions;
 };
+
+const readThread = async (channel) => {
+    let data = "";
+
+    let config = {
+        method: "get",
+        maxBodyLength: Infinity,
+        url: `https://discord.com/api/v9/channels/${channel}/messages?limit=100`,
+        headers: {
+            Authorization: process.env["DISCORD_TOKEN"],
+            Cookie: process.env["DISCORD_COOKIE"],
+        },
+        data: data,
+    };
+    console.log("Reading from channel", channel);
+
+    const response = await axios(config);
+    const threads = [];
+
+    for (let i = response.data.length; i > 0; i--) {
+
+        if (!response.data[i]?.content.startsWith("__**Stickied Message:**__")) {
+            threads.push(response.data[i].content);
+
+            // get message id as "id"
+        }
+
+        if (response.data[i].content.startsWith("*Description:")) {
+            const question = response.data[i].content;
+            
+            console.log("Question", question);
+            
+        }
+    }
+
+    // find messages that begin with "Fact Check"
+    // const questions = response.data.filter((message) => message.content.startsWith("Fact check:"));
+    return questions;
+};
+
 
 const parseLine = (line) => {
     console.log("Parsing line", line);
@@ -81,9 +149,11 @@ const claude = async (question) => {
 const main = async () => {
     console.log("Starting main");
 
-    const questions = await readChannel("964000735073284127"); // Evidence rational
-    // parseLine("test");
-    await claude();
+    // await readThread("964000735073284127", "1330557531948585162");
+    // const questions = await readChannel("964000735073284127"); // Evidence rational
+    const thread = await readThread("1330557531948585162"); // TikTok thread
+    // // parseLine("test");
+    // await claude();
 };
 
 main();
